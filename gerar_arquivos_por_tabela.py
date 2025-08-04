@@ -1,50 +1,66 @@
 import os
 import pandas as pd
 from prophet import Prophet
+from config.database import SQLServerConnector
 from etl.extract_data import carregar_dados
+from pathlib import Path
 
-def gerar_previsao(df, coluna_valor, nome_coluna_resultado):
-    if df[coluna_valor].nunique() < 2:
-        print(f"⚠️  Dados insuficientes para previsão de '{coluna_valor}'. Gerando valores constantes.")
-        ultimo_valor = df[coluna_valor].iloc[-1]
-        futuro = pd.date_range(start=df["DataHoraColeta"].max(), periods=14, freq='MS')
-        previsao = pd.DataFrame({
-            'ano_mes': futuro.strftime('%Y-%m'),
-            nome_coluna_resultado: [ultimo_valor] * len(futuro)
-        })
-    else:
-        df_prophet = df[["DataHoraColeta", coluna_valor]].rename(columns={"DataHoraColeta": "ds", coluna_valor: "y"})
-        modelo = Prophet()
-        modelo.fit(df_prophet)
+def preparar_previsao(df_tabela, coluna_valor):
+    df = df_tabela[["DataHoraColeta", coluna_valor]].copy()
+    df["DataHoraColeta"] = pd.to_datetime(df["DataHoraColeta"])
+    df[coluna_valor] = pd.to_numeric(df[coluna_valor], errors="coerce")
+    df = df.dropna()
 
-        futuro = modelo.make_future_dataframe(periods=14, freq='MS')
-        forecast = modelo.predict(futuro)
-        forecast["ano_mes"] = forecast["ds"].dt.strftime("%Y-%m")
-        previsao = forecast[["ano_mes", "yhat"]].rename(columns={"yhat": nome_coluna_resultado})
+    # Agrupar por mês
+    df = df.groupby(pd.Grouper(key="DataHoraColeta", freq="MS"))[coluna_valor].sum().reset_index()
+    df.columns = ["ds", "y"]
 
-    return previsao
+    if len(df) < 3 or df["y"].sum() == 0:
+        return None
+
+    modelo = Prophet()
+    modelo.fit(df)
+
+    futuro = modelo.make_future_dataframe(periods=6, freq="MS")
+    forecast = modelo.predict(futuro)
+
+    forecast_resultado = forecast[["ds", "yhat"]].copy()
+    forecast_resultado.columns = ["ds", f"{coluna_valor}_previsto"]
+
+    return forecast_resultado
 
 def gerar_arquivos_por_tabela():
     df = carregar_dados()
-    tabelas = df["TableName"].unique()
 
-    os.makedirs("data/tabelas", exist_ok=True)
+    df["DataHoraColeta"] = pd.to_datetime(df["DataHoraColeta"])
+    df["RowCounts"] = pd.to_numeric(df["RowCounts"], errors="coerce")
+    df["TotalSizeMB"] = pd.to_numeric(df["TotalSizeMB"], errors="coerce")
+
+    output_dir = Path("data/tabelas")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tabelas = df["TableName"].unique()
 
     for tabela in tabelas:
         df_tabela = df[df["TableName"] == tabela].copy()
-        df_tabela = df_tabela.sort_values("DataHoraColeta")
 
-        resumo = df_tabela[["TableName", "DataHoraColeta", "RowCounts", "TotalSizeMB"]].copy()
-        resumo["TotalSizeGB"] = resumo["TotalSizeMB"] / 1024
+        previsao_linhas = preparar_previsao(df_tabela, "RowCounts")
+        previsao_tamanho = preparar_previsao(df_tabela, "TotalSizeMB")
 
-        previsao_row = gerar_previsao(df_tabela, "RowCounts", "Previsao_RowCounts_Mensal")
-        previsao_size = gerar_previsao(df_tabela, "TotalSizeMB", "Previsao_TotalSizeMB_Mensal")
-        previsao_size["Previsao_TotalSizeGB_Mensal"] = previsao_size["Previsao_TotalSizeMB_Mensal"] / 1024
+        # Verificação de dados insuficientes
+        if previsao_linhas is None or previsao_tamanho is None:
+            print(f"⚠️ Tabela '{tabela}' ignorada por falta de dados suficientes.")
+            continue
 
-        caminho_saida = f"data/tabelas/{tabela}.xlsx"
+        df_final = pd.merge(previsao_linhas, previsao_tamanho, on="ds", how="outer")
+        df_final["TotalSizeGB_previsto"] = df_final["TotalSizeMB_previsto"] / 1024
+        df_final = df_final.sort_values("ds")
+
+        caminho_saida = output_dir / f"TABELA_{tabela}.xlsx"
         with pd.ExcelWriter(caminho_saida, engine="openpyxl") as writer:
-            resumo.to_excel(writer, sheet_name="Resumo", index=False)
-            previsao_row.to_excel(writer, sheet_name="Previsao_RowCounts", index=False)
-            previsao_size.to_excel(writer, sheet_name="Previsao_TotalSizeMB", index=False)
+            df_final.to_excel(writer, sheet_name="Previsao_Mensal", index=False)
 
-        print(f"✅ Arquivo gerado para a tabela '{tabela}': {caminho_saida}")
+        print(f"✅ Previsão gerada para: {tabela}")
+
+if __name__ == "__main__":
+    gerar_arquivos_por_tabela()
