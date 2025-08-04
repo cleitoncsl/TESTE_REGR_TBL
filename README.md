@@ -1,38 +1,17 @@
-\# 📊 HIST\_CRESC\_ANALISE
+# Criando o conteúdo do README.md com todas as informações solicitadas
+readme_content = """# 📊 HIST_CRESC_ANALISE
 
-
-
-Análise de crescimento vegetativo de tabelas em um banco de dados SQL Server 2019, com previsão mês a mês utilizando machine learning.
-
-
+Projeto de análise e previsão do crescimento vegetativo de tabelas em um banco de dados SQL Server 2019. Utiliza machine learning (Prophet) para gerar projeções mensais com base em histórico de linhas e tamanho das tabelas.
 
 ---
 
+## 🎯 Objetivo
 
-
-\## 🚀 Objetivo
-
-
-
-Este projeto tem como foco:
-
-\- Monitorar o crescimento de linhas (`RowCounts`) e tamanho (`TotalSizeMB`) das tabelas do banco.
-
-\- Aplicar previsões mensais usando o modelo Prophet.
-
-\- Gerar arquivos Excel com resumos e projeções para cada tabela.
-
-\- Automatizar a leitura de histórico diretamente do SQL Server.
-
-
+- Realizar o monitoramento contínuo do crescimento das tabelas no banco de dados.
+- Gerar previsões mensais com base em dados históricos para planejamento de capacidade.
+- Automatizar a conexão com o SQL Server e exportar relatórios em Excel por tabela.
 
 ---
 
-
-
-\## 🏗️ Estrutura do Projeto
-
-
-
-
+## 📂 Estrutura do Projeto
 
