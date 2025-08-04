@@ -1,0 +1,12 @@
+# Ambientes virtuais
+.venv/
+__pycache__/
+*.pyc
+
+# Configs e dados locais
+.env
+*.xlsx
+*.csv
+
+# IDEs
+.vscode/
